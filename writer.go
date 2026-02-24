@@ -205,8 +205,8 @@ func makeWriteFunc[T any](t reflect.Type, writeRows writeRowsFunc) writeFunc[T] 
 			for i, c := range w.base.writer.currentRowGroup.columns {
 				// These fields are usually lazily initialized when writing rows,
 				// we need them to exist now tho.
-				c.columnBuffer = c.newColumnBuffer()
-				w.columns[i] = c.columnBuffer
+				c.ColumnBuffer = c.newColumnBuffer()
+				w.columns[i] = c.ColumnBuffer
 			}
 		}
 		writeRows(w.columns, columnLevels{}, makeArrayFromSlice(rows))
@@ -246,7 +246,7 @@ func (w *GenericWriter[T]) Write(rows []T) (written int, err error) {
 			}
 
 			for _, c := range currentRowGroup.columns {
-				if c.columnBuffer != nil && c.columnBuffer.Size() >= int64(c.bufferSize) {
+				if c.ColumnBuffer != nil && c.ColumnBuffer.Size() >= int64(c.bufferSize) {
 					if err := c.Flush(); err != nil {
 						return n, err
 					}
@@ -1477,7 +1477,7 @@ type ColumnWriter struct {
 	columnType           Type
 	originalType         Type // Original type before any encoding changes
 	columnIndex          ColumnIndexer
-	columnBuffer         ColumnBuffer
+	ColumnBuffer         ColumnBuffer
 	plainColumnBuffer    ColumnBuffer // Retained plain buffer for fallback after lazy creation
 	originalColumnBuffer ColumnBuffer // Original buffer to restore after row group flush
 	columnFilter         BloomFilterColumn
@@ -1526,10 +1526,10 @@ func (c *ColumnWriter) reset() {
 		c.hasSwitchedToPlain = false
 	}
 	if c.originalColumnBuffer != nil {
-		c.columnBuffer = c.originalColumnBuffer
+		c.ColumnBuffer = c.originalColumnBuffer
 	}
-	if c.columnBuffer != nil {
-		c.columnBuffer.Reset()
+	if c.ColumnBuffer != nil {
+		c.ColumnBuffer.Reset()
 	}
 	if c.columnIndex != nil {
 		c.columnIndex.Reset()
@@ -1567,18 +1567,18 @@ func (c *ColumnWriter) reset() {
 
 func (c *ColumnWriter) totalRowCount() int64 {
 	n := c.numRows
-	if c.columnBuffer != nil {
-		n += int64(c.columnBuffer.Len())
+	if c.ColumnBuffer != nil {
+		n += int64(c.ColumnBuffer.Len())
 	}
 	return n
 }
 
 // Flush writes any buffered data to the underlying [io.Writer].
 func (c *ColumnWriter) Flush() (err error) {
-	if c.columnBuffer == nil {
+	if c.ColumnBuffer == nil {
 		return nil
 	}
-	if c.columnBuffer.Len() > 0 {
+	if c.ColumnBuffer.Len() > 0 {
 		// Check dictionary size limit BEFORE writing the page
 		// to decide if we should switch to PLAIN for future pages
 		var fallbackToPlain bool
@@ -1597,8 +1597,8 @@ func (c *ColumnWriter) Flush() (err error) {
 		}
 
 		// Write the current buffered page (still with current encoding)
-		defer c.columnBuffer.Reset()
-		_, err = c.writeDataPage(c.columnBuffer.Page())
+		defer c.ColumnBuffer.Reset()
+		_, err = c.writeDataPage(c.ColumnBuffer.Page())
 		if err != nil {
 			return err
 		}
@@ -1758,19 +1758,19 @@ func (c *ColumnWriter) newColumnBuffer() ColumnBuffer {
 // pages.
 func (c *ColumnWriter) WriteRowValues(rows []Value) (int, error) {
 	var startingRows int64
-	if c.columnBuffer == nil {
+	if c.ColumnBuffer == nil {
 		// Lazily create the row group column so we don't need to allocate it if
 		// rows are not written individually to the column.
-		c.columnBuffer = c.newColumnBuffer()
-		c.originalColumnBuffer = c.columnBuffer
+		c.ColumnBuffer = c.newColumnBuffer()
+		c.originalColumnBuffer = c.ColumnBuffer
 	} else {
-		startingRows = int64(c.columnBuffer.Len())
+		startingRows = int64(c.ColumnBuffer.Len())
 	}
-	if _, err := c.columnBuffer.WriteValues(rows); err != nil {
+	if _, err := c.ColumnBuffer.WriteValues(rows); err != nil {
 		return 0, err
 	}
-	numRows := int(int64(c.columnBuffer.Len()) - startingRows)
-	if c.columnBuffer.Size() >= int64(c.bufferSize) {
+	numRows := int(int64(c.ColumnBuffer.Len()) - startingRows)
+	if c.ColumnBuffer.Size() >= int64(c.bufferSize) {
 		return numRows, c.Flush()
 	}
 	return numRows, nil
@@ -1779,25 +1779,25 @@ func (c *ColumnWriter) WriteRowValues(rows []Value) (int, error) {
 // Close closes the column writer and resets all dependent resources.
 // It can be reused after Close is called.
 func (c *ColumnWriter) Close() (err error) {
-	if c.columnBuffer == nil {
+	if c.ColumnBuffer == nil {
 		return nil
 	}
 	if err := c.Flush(); err != nil {
 		return err
 	}
-	c.columnBuffer.Reset()
+	c.ColumnBuffer.Reset()
 	return nil
 }
 
 func (c *ColumnWriter) writeValues(values []Value) (numValues int, err error) {
-	if c.columnBuffer == nil {
-		c.columnBuffer = c.newColumnBuffer()
+	if c.ColumnBuffer == nil {
+		c.ColumnBuffer = c.newColumnBuffer()
 		// Save the original dictionary-encoding buffer to restore after row group flush
 		if c.originalColumnBuffer == nil {
-			c.originalColumnBuffer = c.columnBuffer
+			c.originalColumnBuffer = c.ColumnBuffer
 		}
 	}
-	return c.columnBuffer.WriteValues(values)
+	return c.ColumnBuffer.WriteValues(values)
 }
 
 func (c *ColumnWriter) writeBloomFilter(w io.Writer) error {
@@ -2018,7 +2018,7 @@ func (c *ColumnWriter) fallbackDictionaryToPlain() error {
 			c.plainColumnBuffer = base
 		}
 	}
-	c.columnBuffer = c.plainColumnBuffer
+	c.ColumnBuffer = c.plainColumnBuffer
 	c.encoding = &plain.Encoding{}
 	c.encodings = addEncoding(c.encodings, format.Plain)
 	// DON'T clear the dictionary reference!
