@@ -316,6 +316,22 @@ func (col *indexedColumnBuffer) WriteValues(values []Value) (int, error) {
 	return len(values), nil
 }
 
+func (col *indexedColumnBuffer) WriteValueRle(values []Value, repeat int) (int, error) {
+	i := len(col.values)
+	j := len(col.values) + len(values)*repeat
+
+	if j <= cap(col.values) {
+		col.values = col.values[:j]
+	} else {
+		tmp := make([]int32, j, 2*j)
+		copy(tmp, col.values)
+		col.values = tmp
+	}
+
+	col.typ.dict.(*byteArrayDictionary).InsertRle(col.values[i:], values, repeat)
+	return len(values), nil
+}
+
 func (col *indexedColumnBuffer) writeValues(_ columnLevels, rows sparse.Array) {
 	i := len(col.values)
 	j := len(col.values) + rows.Len()

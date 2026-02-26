@@ -11,7 +11,7 @@ import (
 	"github.com/parquet-go/parquet-go/sparse"
 )
 
-// repeatedColumnBuffer is an implementation of the ColumnBuffer interface used
+// RepeatedColumnBuffer is an implementation of the ColumnBuffer interface used
 // as a wrapper to an underlying ColumnBuffer to manage the creation of
 // repetition levels, definition levels, and map rows to the region of the
 // underlying buffer that contains their sequence of values.
@@ -23,7 +23,7 @@ import (
 // This column buffer type is used for all leaf columns that have a non-zero
 // max repetition level, which may be because the column or one of its parent(s)
 // are marked repeated.
-type repeatedColumnBuffer struct {
+type RepeatedColumnBuffer struct {
 	base               ColumnBuffer
 	reordered          bool
 	maxRepetitionLevel byte
@@ -32,7 +32,7 @@ type repeatedColumnBuffer struct {
 	repetitionLevels   memory.SliceBuffer[byte]
 	definitionLevels   memory.SliceBuffer[byte]
 	buffer             []Value
-	reordering         *repeatedColumnBuffer
+	reordering         *RepeatedColumnBuffer
 	nullOrdering       nullOrdering
 }
 
@@ -44,8 +44,8 @@ type offsetMapping struct {
 	baseOffset uint32
 }
 
-func newRepeatedColumnBuffer(base ColumnBuffer, maxRepetitionLevel, maxDefinitionLevel byte, nullOrdering nullOrdering) *repeatedColumnBuffer {
-	return &repeatedColumnBuffer{
+func newRepeatedColumnBuffer(base ColumnBuffer, maxRepetitionLevel, maxDefinitionLevel byte, nullOrdering nullOrdering) *RepeatedColumnBuffer {
+	return &RepeatedColumnBuffer{
 		base:               base,
 		maxRepetitionLevel: maxRepetitionLevel,
 		maxDefinitionLevel: maxDefinitionLevel,
@@ -53,8 +53,8 @@ func newRepeatedColumnBuffer(base ColumnBuffer, maxRepetitionLevel, maxDefinitio
 	}
 }
 
-func (col *repeatedColumnBuffer) Clone() ColumnBuffer {
-	return &repeatedColumnBuffer{
+func (col *RepeatedColumnBuffer) Clone() ColumnBuffer {
+	return &RepeatedColumnBuffer{
 		base:               col.base.Clone(),
 		reordered:          col.reordered,
 		maxRepetitionLevel: col.maxRepetitionLevel,
@@ -66,42 +66,42 @@ func (col *repeatedColumnBuffer) Clone() ColumnBuffer {
 	}
 }
 
-func (col *repeatedColumnBuffer) Type() Type {
+func (col *RepeatedColumnBuffer) Type() Type {
 	return col.base.Type()
 }
 
-func (col *repeatedColumnBuffer) NumValues() int64 {
+func (col *RepeatedColumnBuffer) NumValues() int64 {
 	return int64(col.definitionLevels.Len())
 }
 
-func (col *repeatedColumnBuffer) ColumnIndex() (ColumnIndex, error) {
+func (col *RepeatedColumnBuffer) ColumnIndex() (ColumnIndex, error) {
 	return columnIndexOfNullable(col.base, col.maxDefinitionLevel, col.definitionLevels.Slice())
 }
 
-func (col *repeatedColumnBuffer) OffsetIndex() (OffsetIndex, error) {
+func (col *RepeatedColumnBuffer) OffsetIndex() (OffsetIndex, error) {
 	return col.base.OffsetIndex()
 }
 
-func (col *repeatedColumnBuffer) BloomFilter() BloomFilter {
+func (col *RepeatedColumnBuffer) BloomFilter() BloomFilter {
 	return col.base.BloomFilter()
 }
 
-func (col *repeatedColumnBuffer) Dictionary() Dictionary {
+func (col *RepeatedColumnBuffer) Dictionary() Dictionary {
 	return col.base.Dictionary()
 }
 
-func (col *repeatedColumnBuffer) Column() int {
+func (col *RepeatedColumnBuffer) Column() int {
 	return col.base.Column()
 }
 
-func (col *repeatedColumnBuffer) Pages() Pages {
+func (col *RepeatedColumnBuffer) Pages() Pages {
 	return onePage(col.Page())
 }
 
-func (col *repeatedColumnBuffer) Page() Page {
+func (col *RepeatedColumnBuffer) Page() Page {
 	if col.reordered {
 		if col.reordering == nil {
-			col.reordering = col.Clone().(*repeatedColumnBuffer)
+			col.reordering = col.Clone().(*RepeatedColumnBuffer)
 		}
 
 		column := col.reordering
@@ -162,29 +162,29 @@ func (col *repeatedColumnBuffer) Page() Page {
 	)
 }
 
-func (col *repeatedColumnBuffer) swapReorderingBuffer(buf *repeatedColumnBuffer) {
+func (col *RepeatedColumnBuffer) swapReorderingBuffer(buf *RepeatedColumnBuffer) {
 	col.base, buf.base = buf.base, col.base
 	col.rows, buf.rows = buf.rows, col.rows
 	col.repetitionLevels, buf.repetitionLevels = buf.repetitionLevels, col.repetitionLevels
 	col.definitionLevels, buf.definitionLevels = buf.definitionLevels, col.definitionLevels
 }
 
-func (col *repeatedColumnBuffer) Reset() {
+func (col *RepeatedColumnBuffer) Reset() {
 	col.base.Reset()
 	col.rows = col.rows[:0]
 	col.repetitionLevels.Resize(0)
 	col.definitionLevels.Resize(0)
 }
 
-func (col *repeatedColumnBuffer) Size() int64 {
+func (col *RepeatedColumnBuffer) Size() int64 {
 	return int64(8*len(col.rows)+col.repetitionLevels.Len()+col.definitionLevels.Len()) + col.base.Size()
 }
 
-func (col *repeatedColumnBuffer) Cap() int { return cap(col.rows) }
+func (col *RepeatedColumnBuffer) Cap() int { return cap(col.rows) }
 
-func (col *repeatedColumnBuffer) Len() int { return len(col.rows) }
+func (col *RepeatedColumnBuffer) Len() int { return len(col.rows) }
 
-func (col *repeatedColumnBuffer) Less(i, j int) bool {
+func (col *RepeatedColumnBuffer) Less(i, j int) bool {
 	row1 := col.rows[i]
 	row2 := col.rows[j]
 	less := col.nullOrdering
@@ -209,7 +209,7 @@ func (col *repeatedColumnBuffer) Less(i, j int) bool {
 	return row1Length < row2Length
 }
 
-func (col *repeatedColumnBuffer) Swap(i, j int) {
+func (col *RepeatedColumnBuffer) Swap(i, j int) {
 	// Because the underlying column does not contain null values, and may hold
 	// an arbitrary number of values per row, we cannot swap its values at
 	// indexes i and j. We swap the row indexes only, then reorder the base
@@ -220,7 +220,7 @@ func (col *repeatedColumnBuffer) Swap(i, j int) {
 	col.rows[i], col.rows[j] = col.rows[j], col.rows[i]
 }
 
-func (col *repeatedColumnBuffer) WriteValues(values []Value) (numValues int, err error) {
+func (col *RepeatedColumnBuffer) WriteValues(values []Value) (numValues int, err error) {
 	maxRowLen := 0
 	defer func() {
 		clearValues(col.buffer[:maxRowLen])
@@ -252,7 +252,7 @@ func (col *repeatedColumnBuffer) WriteValues(values []Value) (numValues int, err
 	return numValues, nil
 }
 
-func (col *repeatedColumnBuffer) writeRow(row []Value) error {
+func (col *RepeatedColumnBuffer) writeRow(row []Value) error {
 	col.buffer = col.buffer[:0]
 
 	for _, v := range row {
@@ -283,7 +283,40 @@ func (col *repeatedColumnBuffer) writeRow(row []Value) error {
 	return nil
 }
 
-func (col *repeatedColumnBuffer) writeValues(levels columnLevels, row sparse.Array) {
+func (col *RepeatedColumnBuffer) WriteRowRle(row []Value, repeat int) error {
+	col.buffer = col.buffer[:0]
+
+	for _, v := range row {
+		if v.definitionLevel == col.maxDefinitionLevel {
+			col.buffer = append(col.buffer, v)
+		}
+	}
+
+	baseOffset := col.base.NumValues()
+	if len(col.buffer) > 0 {
+		if _, err := col.base.(*indexedColumnBuffer).WriteValueRle(col.buffer, repeat); err != nil {
+			return err
+		}
+	}
+
+	if row[0].repetitionLevel == 0 {
+		col.rows = append(col.rows, offsetMapping{
+			offset:     uint32(col.repetitionLevels.Len()),
+			baseOffset: uint32(baseOffset),
+		})
+	}
+
+	for range repeat {
+		for _, v := range row {
+			col.repetitionLevels.AppendValue(v.repetitionLevel)
+			col.definitionLevels.AppendValue(v.definitionLevel)
+		}
+	}
+
+	return nil
+}
+
+func (col *RepeatedColumnBuffer) writeValues(levels columnLevels, row sparse.Array) {
 	if levels.repetitionLevel == 0 {
 		col.rows = append(col.rows, offsetMapping{
 			offset:     uint32(col.repetitionLevels.Len()),
@@ -311,7 +344,7 @@ func (col *repeatedColumnBuffer) writeValues(levels columnLevels, row sparse.Arr
 	}
 }
 
-func (col *repeatedColumnBuffer) writeLevel(levels columnLevels) bool {
+func (col *RepeatedColumnBuffer) writeLevel(levels columnLevels) bool {
 	if levels.repetitionLevel == 0 {
 		col.rows = append(col.rows, offsetMapping{
 			offset:     uint32(col.repetitionLevels.Len()),
@@ -323,53 +356,53 @@ func (col *repeatedColumnBuffer) writeLevel(levels columnLevels) bool {
 	return levels.definitionLevel == col.maxDefinitionLevel
 }
 
-func (col *repeatedColumnBuffer) writeBoolean(levels columnLevels, value bool) {
+func (col *RepeatedColumnBuffer) writeBoolean(levels columnLevels, value bool) {
 	if col.writeLevel(levels) {
 		col.base.writeBoolean(levels, value)
 	}
 }
 
-func (col *repeatedColumnBuffer) writeInt32(levels columnLevels, value int32) {
+func (col *RepeatedColumnBuffer) writeInt32(levels columnLevels, value int32) {
 	if col.writeLevel(levels) {
 		col.base.writeInt32(levels, value)
 	}
 }
 
-func (col *repeatedColumnBuffer) writeInt64(levels columnLevels, value int64) {
+func (col *RepeatedColumnBuffer) writeInt64(levels columnLevels, value int64) {
 	if col.writeLevel(levels) {
 		col.base.writeInt64(levels, value)
 	}
 }
 
-func (col *repeatedColumnBuffer) writeInt96(levels columnLevels, value deprecated.Int96) {
+func (col *RepeatedColumnBuffer) writeInt96(levels columnLevels, value deprecated.Int96) {
 	if col.writeLevel(levels) {
 		col.base.writeInt96(levels, value)
 	}
 }
 
-func (col *repeatedColumnBuffer) writeFloat(levels columnLevels, value float32) {
+func (col *RepeatedColumnBuffer) writeFloat(levels columnLevels, value float32) {
 	if col.writeLevel(levels) {
 		col.base.writeFloat(levels, value)
 	}
 }
 
-func (col *repeatedColumnBuffer) writeDouble(levels columnLevels, value float64) {
+func (col *RepeatedColumnBuffer) writeDouble(levels columnLevels, value float64) {
 	if col.writeLevel(levels) {
 		col.base.writeDouble(levels, value)
 	}
 }
 
-func (col *repeatedColumnBuffer) writeByteArray(levels columnLevels, value []byte) {
+func (col *RepeatedColumnBuffer) writeByteArray(levels columnLevels, value []byte) {
 	if col.writeLevel(levels) {
 		col.base.writeByteArray(levels, value)
 	}
 }
 
-func (col *repeatedColumnBuffer) writeNull(levels columnLevels) {
+func (col *RepeatedColumnBuffer) writeNull(levels columnLevels) {
 	col.writeLevel(levels)
 }
 
-func (col *repeatedColumnBuffer) ReadValuesAt(values []Value, offset int64) (int, error) {
+func (col *RepeatedColumnBuffer) ReadValuesAt(values []Value, offset int64) (int, error) {
 	length := int64(col.definitionLevels.Len())
 	if offset < 0 {
 		return 0, errRowIndexOutOfBounds(offset, length)

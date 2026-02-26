@@ -52,6 +52,10 @@ func (d *byteArrayDictionary) Insert(indexes []int32, values []Value) {
 	d.insert(indexes, makeArrayValue(values, offsetOfPtr))
 }
 
+func (d *byteArrayDictionary) InsertRle(indexes []int32, values []Value, repeat int) {
+	d.insertRle(indexes, makeArrayValue(values, offsetOfPtr), repeat)
+}
+
 func (d *byteArrayDictionary) init() {
 	numValues := d.len()
 	d.table = make(map[string]int32, numValues)
@@ -88,6 +92,41 @@ func (d *byteArrayDictionary) insert(indexes []int32, rows sparse.Array) {
 		}
 
 		indexes[i] = index
+	}
+}
+
+func (d *byteArrayDictionary) insertRle(indexes []int32, rows sparse.Array, repeat int) {
+	if d.table == nil {
+		d.init()
+	}
+
+	values := rows.StringArray()
+	vlen := values.Len()
+
+	for i := range vlen {
+		value := values.Index(i)
+
+		index, exists := d.table[value]
+		if !exists {
+			// Check if adding this value would cause uint32 overflow in offsets.
+			// The offsets are stored as uint32, so the total size of all values
+			// cannot exceed math.MaxUint32 bytes.
+			newLen := int64(d.values.Len()) + int64(len(value))
+			if newLen > math.MaxUint32 {
+				panic("parquet: byte array dictionary size exceeds maximum (4GB); use DictionaryMaxBytes writer option to limit dictionary size")
+			}
+			value = d.alloc.copyString(value)
+			index = int32(len(d.table))
+			d.table[value] = index
+			d.values.Append([]byte(value)...)
+			d.offsets.AppendValue(uint32(d.values.Len()))
+		}
+
+		indexes[i] = index
+	}
+
+	for i := 1; i < repeat; i++ {
+		copy(indexes[i*vlen:(i+1)*vlen], indexes[:vlen])
 	}
 }
 
